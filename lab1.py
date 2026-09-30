@@ -8,10 +8,12 @@
     python lab1.py [signal.wav] [noise.wav]
 """
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import webbrowser
+from pathlib import Path
 
 import numpy as np
 import plotly.graph_objects as go
@@ -24,15 +26,23 @@ POSITIONS_SEC = [2, 7, 12, 18, 24]  # де вставляємо шаблон, с
 N_OCCURRENCES = len(POSITIONS_SEC)  # кількість входжень шаблону (>= 3)
 TEMPLATE_NOISE_SNR_DB = 20  # SNR шаблону відносно доданого гаусівського шуму
 DETECT_Z = 10             # поріг виявлення: у скільки робастних σ пік вищий за фон кореляції
-OUT_DIR = "results"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # шляхи — від теки скрипта, а не від поточної
+OUT_DIR = os.path.join(BASE_DIR, "results")
 
 
 # ---------------------------------------------------------------- 1. Завантаження
 def load_audio(path, target_sr=None):
-    """Завантажує аудіо у моно float [-1, 1]. Не-WAV конвертує через afconvert (macOS)."""
+    """Завантажує аудіо у моно float [-1, 1]. Не-WAV конвертує через ffmpeg (або afconvert на macOS)."""
     if not path.lower().endswith(".wav"):
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
-        subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16", path, tmp], check=True)
+        fd, tmp = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)  # на Windows відкритий файл не дасть конвертеру в нього писати
+        if shutil.which("ffmpeg"):
+            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", path, "-acodec", "pcm_s16le", tmp]
+        elif shutil.which("afconvert"):
+            cmd = ["afconvert", "-f", "WAVE", "-d", "LEI16", path, tmp]
+        else:
+            sys.exit(f"Файл {path} не у форматі WAV. Встановіть ffmpeg або сконвертуйте його у .wav вручну.")
+        subprocess.run(cmd, check=True)
         path = tmp
     sr, x = wavfile.read(path)
     if np.issubdtype(x.dtype, np.integer):
@@ -62,8 +72,10 @@ def snr_db(clean, test):
 
 
 def main():
-    signal_path = sys.argv[1] if len(sys.argv) > 1 else "audio/signal.wav"
-    noise_path = sys.argv[2] if len(sys.argv) > 2 else "audio/noise.wav"
+    # Консоль Windows за замовчуванням не UTF-8 — без цього кирилиця у print() може впасти з помилкою
+    sys.stdout.reconfigure(encoding="utf-8")
+    signal_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE_DIR, "audio", "signal.wav")
+    noise_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(BASE_DIR, "audio", "noise.wav")
     os.makedirs(OUT_DIR, exist_ok=True)
     rng = np.random.default_rng(SEED)
 
@@ -155,10 +167,29 @@ def main():
 C_ORIG, C_NOISY, C_CLEAN, C_ERR = "#2a78d6", "#eb6834", "#1baf7a", "#52514e"
 
 
+MAX_BUCKETS = 20000  # довші лінії проріджуємо: мільйон точок робить HTML на десятки МБ
+
+
 def line(y, sr, name, color, width=1, dash=None, t0=0.0, **kw):
-    """WebGL-лінія з рівномірною віссю часу (x0/dx замість масиву — легший HTML)."""
-    return go.Scattergl(y=np.asarray(y, dtype=np.float32), x0=t0, dx=1 / sr, mode="lines",
-                        name=name, line=dict(color=color, width=width, dash=dash), **kw)
+    """WebGL-лінія з рівномірною віссю часу (x0/dx замість масиву — легший HTML).
+
+    Довгі сигнали проріджуються до пар (min, max) у кожному блоці відліків —
+    форма хвилі та всі піки зберігаються, а розмір сторінки падає в десятки разів.
+    """
+    y = np.asarray(y, dtype=np.float32)
+    style = dict(mode="lines", name=name, line=dict(color=color, width=width, dash=dash), **kw)
+    if len(y) <= 5 * MAX_BUCKETS:  # коротким лініям проріджування не потрібне
+        return go.Scattergl(y=y, x0=t0, dx=1 / sr, **style)
+    step = -(-len(y) // MAX_BUCKETS)  # ділення з округленням угору
+    n = len(y) // step * step
+    blocks = y[:n].reshape(-1, step)
+    idx = np.arange(0, n, step)
+    lo, hi = blocks.argmin(axis=1) + idx, blocks.argmax(axis=1) + idx
+    # Кожна пара — у часовому порядку, щоб лінія не йшла назад
+    pts = np.sort(np.stack([lo, hi], axis=1), axis=1).ravel()
+    if n < len(y):
+        pts = np.append(pts, np.arange(n, len(y)))
+    return go.Scattergl(x=(t0 + pts / sr).astype(np.float32), y=y[pts], **style)
 
 
 def finish(fig, title, filename, height):
@@ -169,7 +200,7 @@ def finish(fig, title, filename, height):
     # (fig.show() піднімає одноразовий сервер, і частина вкладок іноді не завантажується.)
     path = os.path.abspath(os.path.join(OUT_DIR, filename))
     fig.write_html(path, include_plotlyjs="cdn")
-    webbrowser.open("file://" + path)
+    webbrowser.open(Path(path).as_uri())
 
 
 def plot_results(sr, x, y, cleaned, noise_sound, template, ncc, threshold,
@@ -278,7 +309,7 @@ def make_listen_page(times):
     path = os.path.abspath(os.path.join(OUT_DIR, "0_listen.html"))
     with open(path, "w", encoding="utf-8") as f:
         f.write(LISTEN_HTML.format(tracks=tracks))
-    webbrowser.open("file://" + path)
+    webbrowser.open(Path(path).as_uri())
 
 
 if __name__ == "__main__":
