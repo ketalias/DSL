@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><title>Прослуховування</title>
+<style>
+  :root { --bg:#fcfcfb; --fg:#0b0b0b; --muted:#52514e; --line:#e4e3df; --accent:#2a78d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1a1a19; --fg:#fff; --muted:#c3c2b7; --line:#383835; --accent:#3987e5; } }
+  body { background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system, system-ui, sans-serif;
+         max-width:760px; margin:40px auto; padding:0 16px; }
+  h1 { font-size:22px; }  p { color:var(--muted); }
+  .track { border:1px solid var(--line); border-radius:10px; padding:12px 16px; margin:12px 0; }
+  .track b { display:block; margin-bottom:6px; }
+  audio { width:100%; }
+  .jumps { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  button { font:inherit; font-size:14px; padding:4px 10px; border-radius:6px; cursor:pointer;
+           border:1px solid var(--line); background:transparent; color:var(--fg); }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+</style></head><body>
+<h1>Прослуховування: до та після очищення</h1>
+<p>Кнопки під кожним плеєром перемотують до входження шаблону (за 0.5 с до нього) і запускають відтворення.
+Одночасно грає лише одна доріжка.</p>
+<div class="track"><b>Оригінал</b><audio id="original" controls preload="auto" src="original.wav"></audio><div class="jumps"><button data-a="original" data-t="2.000">▶ 2.00 с</button><button data-a="original" data-t="7.000">▶ 7.00 с</button><button data-a="original" data-t="12.000">▶ 12.00 с</button><button data-a="original" data-t="18.000">▶ 18.00 с</button><button data-a="original" data-t="24.000">▶ 24.00 с</button></div></div>
+<div class="track"><b>Із шумом (клацання ручки)</b><audio id="noisy" controls preload="auto" src="noisy.wav"></audio><div class="jumps"><button data-a="noisy" data-t="2.000">▶ 2.00 с</button><button data-a="noisy" data-t="7.000">▶ 7.00 с</button><button data-a="noisy" data-t="12.000">▶ 12.00 с</button><button data-a="noisy" data-t="18.000">▶ 18.00 с</button><button data-a="noisy" data-t="24.000">▶ 24.00 с</button></div></div>
+<div class="track"><b>Після очищення</b><audio id="cleaned" controls preload="auto" src="cleaned.wav"></audio><div class="jumps"><button data-a="cleaned" data-t="2.000">▶ 2.00 с</button><button data-a="cleaned" data-t="7.000">▶ 7.00 с</button><button data-a="cleaned" data-t="12.000">▶ 12.00 с</button><button data-a="cleaned" data-t="18.000">▶ 18.00 с</button><button data-a="cleaned" data-t="24.000">▶ 24.00 с</button></div></div>
+
+<script>
+  const players = [...document.querySelectorAll("audio")];
+  players.forEach(a => a.addEventListener("play", () => players.forEach(o => o !== a && o.pause())));
+  document.querySelectorAll("button[data-t]").forEach(b => b.onclick = () => {
+    const a = document.getElementById(b.dataset.a);
+    a.currentTime = Math.max(0, +b.dataset.t - 0.5); a.play();
+  });
+</script></body></html>
