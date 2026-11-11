@@ -13,6 +13,7 @@ from pathlib import Path
 import argparse
 import shutil
 import subprocess
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import wavfile
@@ -26,6 +27,7 @@ DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output"
 BANDS = {
     "bird_1": (2000, 3000),
     "bird_2": (4000, 5000),
+    "rooster": (1400, 1800),
 }
 FIR_TAPS = 401              # Odd -> symmetric linear-phase band-pass FIR
 IIR_ORDER = 6               # Butterworth band-pass prototype order
@@ -35,10 +37,17 @@ HOP_SIZE = 512              # STFT shift between frames
 
 def convert_to_wav(path, out_dir):
     """Convert any ffmpeg-readable file (e.g. MP3) to WAV next to the outputs."""
-    if shutil.which('ffmpeg') is None:
-        raise RuntimeError('ffmpeg is required to read non-WAV files (brew install ffmpeg)')
     wav_path = Path(out_dir) / (Path(path).stem + '.wav')
-    subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', str(path), str(wav_path)], check=True)
+    if shutil.which('ffmpeg') is not None:
+        subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', str(path), str(wav_path)], check=True)
+        return wav_path
+    try:
+        import soundfile as sf  # libsndfile >= 1.1 decodes MP3 without ffmpeg
+    except ImportError:
+        raise RuntimeError('Need ffmpeg or soundfile to read non-WAV files '
+                           '(pip install soundfile  /  brew install ffmpeg)')
+    data, fs = sf.read(str(path), dtype='float32')
+    sf.write(str(wav_path), data, fs, subtype='FLOAT')
     return wav_path
 
 
@@ -120,7 +129,16 @@ def plot_responses(fir_b, iir_sos, fs, filename, band_name):
 
 def wav_export(path, fs, audio):
     # Use float32 WAV to preserve relative amplitude without individual normalization.
-    wavfile.write(path, fs, audio.astype(np.float32))
+    data = audio.astype(np.float32)
+    # Windows (antivirus/indexer) can briefly lock a just-written file; retry a few times.
+    for attempt in range(5):
+        try:
+            wavfile.write(path, fs, data)
+            return
+        except OSError:
+            if attempt == 4:
+                raise
+            time.sleep(1)
 
 
 def band_energy(x, fs, low, high):

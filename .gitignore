@@ -1,0 +1,18 @@
+# virtual environments
+.venv/
+venv/
+env/
+
+# python
+__pycache__/
+*.pyc
+
+# generated results (recreate with `python main.py` in each lab)
+lab1/results/
+lab2/output/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
