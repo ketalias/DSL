@@ -1,5 +1,6 @@
-numpy
-scipy
-matplotlib
-plotly
-soundfile
+numpy==2.5.4
+scipy==1.18.1
+matplotlib==3.11.2
+plotly==7.1.0
+soundfile==0.14.0
+opencv-python==5.0.0.93
